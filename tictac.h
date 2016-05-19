@@ -144,22 +144,6 @@ char check()
 
 }
 
-class Repo
-{
-    public:
-        void Create(Poco::MongoDB::Document::Ptr document);
-        void Read();
-        bool Exist(char *name);
-        void Update(char *name, Player player);
-        void Delete();
-        Repo(string host, int port);
-        virtual ~Repo();
-
-    private:
-        string _host;
-        int _port;
-};
-
 class Player
 {
 	public:
@@ -167,5 +151,20 @@ class Player
 		int win;
 		int lose;
 		int draw;
+};
+
+class Repo
+{
+    public:
+        void Create(Poco::MongoDB::Document::Ptr document);
+        void Read();
+        void Update(Player player);
+        void Delete(char *name);
+        Repo(string host, int port);
+        virtual ~Repo();
+
+    private:
+        string _host;
+        int _port;
 };
 #endif /* TICTAC_H_ */

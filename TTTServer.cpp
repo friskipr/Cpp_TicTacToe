@@ -17,21 +17,26 @@
 #include <arpa/inet.h>
 #include <unistd.h>
 #include "tictac.h"
-#include "Poco/MongoDB/Connection.h"
+//#include "Poco/MongoDB/Connection.h"
 #include "Poco/MongoDB/Database.h"
 #include "Poco/MongoDB/InsertRequest.h"
-#include "Poco/MongoDB/MongoDB.h"
+#include "Poco/MongoDB/UpdateRequest.h"
+#include "Poco/MongoDB/DeleteRequest.h"
+#include "Poco/MongoDB/QueryRequest.h"
+//#include "Poco/MongoDB/MongoDB.h"
 #include "Poco/Net/NetException.h"
 #include "Poco/SharedPtr.h"
-#define     PORT "9987"
-#define     MONGODB_PORT 27017
-#define     MONGODB_HOST "localhost"
+#define   PORT 			"9987"
+#define   MONGODB_PORT 	27017
+#define   MONGODB_HOST 	"localhost"
 
 const string DATABASE_NAME = "TicTacToe";
 using namespace std;
 using namespace Poco;
 using namespace Poco::MongoDB;
 using namespace Poco::Net;
+
+Player *Exist(char *name);
 
 int main(int argc, char *argv[])
 {
@@ -79,20 +84,37 @@ int main(int argc, char *argv[])
 
     cout<<endl<<"Enter your Name : ";
 	cin>>sname;
-	bool isExist = repo.Exist(sname);
+	Player *playerExist = Exist(sname);
 
-	if (isExist)
+	if (playerExist->name != "")
 	{
 		cout<<endl<<"Welcome back "<<sname;
+		cout<<endl<<"Your history : ";
+		cout<<endl<<"win  = "<<playerExist->win;
+		cout<<endl<<"lose = "<<playerExist->lose;
+		cout<<endl<<"draw = "<<playerExist->draw;
 	}
 	else
 	{
 		Document::Ptr person = new Document();
 		person->add("name", string(sname));
+		person->add("win", 0);
+		person->add("lose", 0);
+		person->add("draw", 0);
 		repo.Create(person);
 	}
 
-    return 1;
+	char ans;
+	cout<<endl<<"Reset Game History ? (y/N)";
+	cin>>ans;
+
+	if (ans == 'y')
+	{
+		repo.Delete("all");
+		cout<<"--Player History--"<<endl;
+		repo.Read();
+	}
+
     /*-----*/
 
     cout<<"Server created!"<<endl<<"Waiting for a Player..."<<endl;
@@ -286,6 +308,12 @@ int main(int argc, char *argv[])
 			else if (serv_choice == nc)
 			{
 				cout<<endl<<"Congrats! You have won!!!"<<endl<<cname<<" lost."<<endl;
+
+				Player player;
+				player.name = sname;
+				player.win = 1;
+				repo.Update(player);
+
 				break;
 			}
 			else if (cli_choice == nc)
@@ -380,11 +408,11 @@ void Repo::Read(void)
 	}
 }
 
-bool Repo::Exist(char *name)
+Player *Exist(char *name)
 {
 	if (!_connected)
 	{
-		return false;
+		return new Player;
 	}
 
 	string collection = DATABASE_NAME + ".Player";
@@ -398,14 +426,35 @@ bool Repo::Exist(char *name)
 	{
 		for (int i = 0 ; i < response.documents().size() ; i++)
 		{
+			Player *player = new Player;
 			Poco::MongoDB::Document::Ptr doc = response.documents()[i];
 
 			try
 			{
 				string playerName = doc->get<string>("name");
+
 				if (playerName == name)
 				{
-					return true;
+					player->name = playerName;
+
+					int win, lose, draw;
+					if (doc->exists("win"))
+					{
+						win = doc->get<int>("win");
+						player->win = win;
+					}
+					if (doc->exists("lose"))
+					{
+						lose = doc->get<int>("lose");
+						player->lose = lose;
+					}
+					if (doc->exists("draw"))
+					{
+						draw = doc->get<int>("draw");
+						player->draw = draw;
+					}
+
+					return player;
 				}
 			}
 			catch(Poco::Exception& ex)
@@ -418,29 +467,45 @@ bool Repo::Exist(char *name)
 	{
 		perror("No recent players.");
 	}
+
+	return new Player;
 }
 
-void Repo::Update(char *name, Player player)
+void Repo::Update(Player player)
 {
 	if (!_connected)
 	{
 		return;
 	}
 
-	string collection = DATABASE_NAME + ".Player";
-	QueryRequest request(collection);
+	Database db(DATABASE_NAME);
+	SharedPtr<UpdateRequest> updateRequest = db.createUpdateRequest("Player");
 
-	ResponseMessage response;
+	Document& selector = updateRequest->selector();
+	Document& update = updateRequest->update();
 
-	_mongo.sendRequest(request, response);
+	selector.add("name", std::string(player.name));
+	update.addNewDocument("$set").add("win", int(player.win));
+	update.addNewDocument("$set").add("lose", int(player.lose));
+	update.addNewDocument("$set").add("draw", int(player.draw));
 
-	if ( response.documents().size() > 0 )
+	_mongo.sendRequest(*updateRequest);
+
+	selector.clear();
+	update.clear();
+}
+
+void Repo::Delete(char *name)
+{
+	if (!_connected)
 	{
-		for (int i = 0 ; i < response.documents().size() ; i++)
-		{
-			Poco::MongoDB::Document::Ptr doc = response.documents()[i];
-		}
+		return;
 	}
+	string collection = DATABASE_NAME + ".Player";
+	DeleteRequest request(collection);
+	//request.selector().add("name", string(name));
+
+	_mongo.sendRequest(request);
 }
 
 Repo::~Repo(void)
